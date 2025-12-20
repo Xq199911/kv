@@ -1,0 +1,35 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 瀹為獙缁撴灉
+output_logs/
+*.log
+
+# 妯″瀷鏂囦欢锛堝鏋滃お澶э紝鍙互娣诲姞鍒?gitignore锛?,
+    
+
+# 鏁版嵁鏂囦欢锛堝鏋滃お澶э級
+# data_raw/
+
+# 鐜
+venv/
+env/
+.venv/
+
+# 鍏朵粬
+.DS_Store
+wandb/
+*.egg-info/
+dist/
+build/
