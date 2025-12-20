@@ -35,6 +35,27 @@ except ImportError:
     def is_deepspeed_zero3_enabled():
         return False
 from .Stopping_criteria import StopTokenCriteria
+import sys
+import os
+
+# 添加 utils 路径以导入 tokenizer_utils
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_current_dir, '../..'))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+try:
+    from StreamingLLM_GPE.utils.tokenizer_utils import get_all_eos_token_ids
+except ImportError:
+    # Fallback: 如果导入失败，使用简单的检查
+    def get_all_eos_token_ids(tokenizer):
+        eos_ids = set()
+        if tokenizer.eos_token_id is not None:
+            if isinstance(tokenizer.eos_token_id, list):
+                eos_ids.update(tokenizer.eos_token_id)
+            else:
+                eos_ids.add(tokenizer.eos_token_id)
+        return eos_ids
 
 
 def _prepare_4d_causal_attention_mask_with_cache_position(
@@ -407,6 +428,9 @@ class unified_PreTrainedModel(PreTrainedModel):
         max_new_tokens = generation_config.max_new_tokens if hasattr(generation_config,
                                                                      'max_new_tokens') and generation_config.max_new_tokens is not None else 1024
         ReadAction_criteria = StopTokenCriteria(tokenizer, max_new_tokens=max_new_tokens, end_Instruct=end_Instruct)
+        
+        # [通用修复] 获取所有可能的 EOS token IDs，用于通用检测
+        all_eos_token_ids = get_all_eos_token_ids(tokenizer) if tokenizer is not None else set()
 
         _lengths = model_kwargs.get("_lengths", None)
         source_seg_len = _lengths[0]['source_seg_len']
@@ -513,20 +537,12 @@ class unified_PreTrainedModel(PreTrainedModel):
                 else:
                     next_tokens = torch.argmax(next_token_scores, dim=-1)
 
-                # ================= [CRITICAL FIX] Force Stop on EOS =================
+                # ================= [通用修复] Force Stop on EOS =================
                 current_token_id = next_tokens.item()
-                is_eos = False
-                if current_token_id == 151645:
-                    is_eos = True
-                elif current_token_id == 151643:
-                    is_eos = True
-                elif tokenizer is not None and tokenizer.eos_token_id is not None:
-                    if isinstance(tokenizer.eos_token_id, list):
-                        if current_token_id in tokenizer.eos_token_id:
-                            is_eos = True
-                    elif current_token_id == tokenizer.eos_token_id:
-                        is_eos = True
+                # [通用方案] 检查所有可能的 EOS token IDs（从 tokenizer 自动获取）
+                is_eos = current_token_id in all_eos_token_ids
 
+                # [IMPROVED] Immediately stop generation when EOS is detected
                 if is_eos:
                     this_peer_finished = True
                     unfinished_sequences.fill_(0)
@@ -544,7 +560,17 @@ class unified_PreTrainedModel(PreTrainedModel):
                 target_ids = torch.cat(target_tokens, dim=-1)
                 target_tokens_this_write.append(next_tokens)
                 target_ids_this_write = torch.cat(target_tokens_this_write, dim=-1)
+                
+                # [ADDITIONAL SAFETY] Double-check via ReadAction_criteria after adding token
+                # This catches EOS tokens that might have been generated in the sequence
                 ReadAction_new, remove_last_token = ReadAction_criteria(target_ids_this_write, scores, token_count)
+                # ReadAction_new is True when EOS is detected - stop immediately
+                eos_detected = ReadAction_new.item() if isinstance(ReadAction_new, torch.Tensor) else ReadAction_new
+                if eos_detected:
+                    this_peer_finished = True
+                    unfinished_sequences.fill_(0)
+                    break
+                    
                 unfinished_sequences = unfinished_sequences & ~stopping_criteria(target_ids[0:, 2:], scores)
                 generated_tokens_count += 1
                 if generated_tokens_count >= max_new_tokens:

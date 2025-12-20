@@ -2,12 +2,13 @@
 # A级论文完整实验 - 一键运行脚本
 # ============================================
 # 
-# 功能：自动运行所有Phase的实验（Phase 0-4）
+# 功能：自动运行所有Phase的实验（Phase 0-5）
+# 注意：Phase 5 (HAQ-KV) 是论文的主要贡献，必须运行
 # 
 # 使用方法：
-#   .\scripts\windows\run_all_experiments.ps1                    # 运行所有实验
+#   .\scripts\windows\run_all_experiments.ps1                    # 运行所有实验（包括Phase 5）
 #   .\scripts\windows\run_all_experiments.ps1 -SkipPhase0        # 跳过Phase 0
-#   .\scripts\windows\run_all_experiments.ps1 -Phase1Only         # 只运行Phase 1
+#   .\scripts\windows\run_all_experiments.ps1 -Phase5Only        # 只运行Phase 5（HAQ-KV，主要目标）
 #   .\scripts\windows\run_all_experiments.ps1 -SkipPhase4        # 跳过结果分析
 #
 # ============================================
@@ -16,11 +17,13 @@ param(
     [string]$ConfigFile = ".\scripts\windows\config.ps1",
     [switch]$SkipPhase0 = $false,  # 跳过Phase 0（Oracle Batch验证）
     [switch]$SkipPhase4 = $false,  # 跳过Phase 4（结果分析）
+    [switch]$SkipPhase5 = $false,  # 跳过Phase 5（HAQ-KV，主要目标）
     [switch]$Phase0Only = $false,  # 只运行Phase 0
     [switch]$Phase1Only = $false,  # 只运行Phase 1
     [switch]$Phase2Only = $false,  # 只运行Phase 2
     [switch]$Phase3Only = $false,  # 只运行Phase 3
-    [switch]$Phase4Only = $false   # 只运行Phase 4
+    [switch]$Phase4Only = $false,  # 只运行Phase 4
+    [switch]$Phase5Only = $false   # 只运行Phase 5（HAQ-KV，主要目标）
 )
 
 $ErrorActionPreference = "Stop"
@@ -151,7 +154,7 @@ if ($Phase3Only -or (-not $Phase0Only -and -not $Phase1Only -and -not $Phase2Onl
 # ============================================
 # Phase 4: 结果分析和可视化（推荐）
 # ============================================
-if ($Phase4Only -or (-not $SkipPhase4 -and -not $Phase0Only -and -not $Phase1Only -and -not $Phase2Only -and -not $Phase3Only)) {
+if ($Phase4Only -or (-not $SkipPhase4 -and -not $Phase0Only -and -not $Phase1Only -and -not $Phase2Only -and -not $Phase3Only -and -not $Phase5Only)) {
     Write-Host "========================================="
     Write-Host "Phase 4: Results Analysis & Visualization"
     Write-Host "========================================="
@@ -162,6 +165,29 @@ if ($Phase4Only -or (-not $SkipPhase4 -and -not $Phase0Only -and -not $Phase1Onl
     if ($Phase4Only) {
         Write-Host ""
         Write-Host "Phase 4 completed. Exiting." -ForegroundColor Green
+        exit 0
+    }
+    
+    Write-Host ""
+}
+
+# ============================================
+# Phase 5: HAQ-KV实验（主要目标）
+# ============================================
+if ($Phase5Only -or (-not $SkipPhase5 -and -not $Phase0Only -and -not $Phase1Only -and -not $Phase2Only -and -not $Phase3Only -and -not $Phase4Only)) {
+    Write-Host "========================================="
+    Write-Host "Phase 5: HAQ-KV Experiment (MAIN CONTRIBUTION)"
+    Write-Host "========================================="
+    Write-Host "Method: HAQ-KV (Head-Aware Quantized KV Cache)"
+    Write-Host "Purpose: Test heterogeneous quantization based on head functions"
+    Write-Host "This is the MAIN CONTRIBUTION of the paper."
+    Write-Host ""
+    
+    & ".\scripts\windows\phase5_haq_kv.ps1" -ConfigFile $ConfigFile
+    
+    if ($Phase5Only) {
+        Write-Host ""
+        Write-Host "Phase 5 completed. Exiting." -ForegroundColor Green
         exit 0
     }
     
@@ -189,12 +215,14 @@ Write-Host "Generated Files:"
 Write-Host "  - Long Sequence Results: $BASE_OUTPUT_DIR\long_seq_*"
 Write-Host "  - Budget Analysis: $BASE_OUTPUT_DIR\budget_*"
 Write-Host "  - Ablation Results: $BASE_OUTPUT_DIR\ablation\*"
+Write-Host "  - HAQ-KV Results (MAIN): $BASE_OUTPUT_DIR\haq_kv_*"
 Write-Host "  - Analysis Tables: $BASE_OUTPUT_DIR\*_summary.csv"
 Write-Host "  - Visualizations: $BASE_OUTPUT_DIR\figures\*"
 Write-Host ""
 Write-Host "Next Steps:"
 Write-Host "1. Review results: $BASE_OUTPUT_DIR"
-Write-Host "2. Check analysis files: $BASE_OUTPUT_DIR\*_summary.csv"
-Write-Host "3. Review visualizations: $BASE_OUTPUT_DIR\figures"
-Write-Host "4. Prepare paper tables from LaTeX files"
+Write-Host "2. Check HAQ-KV results (MAIN CONTRIBUTION): $BASE_OUTPUT_DIR\haq_kv_*"
+Write-Host "3. Check analysis files: $BASE_OUTPUT_DIR\*_summary.csv"
+Write-Host "4. Review visualizations: $BASE_OUTPUT_DIR\figures"
+Write-Host "5. Prepare paper tables from LaTeX files"
 Write-Host ""

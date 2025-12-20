@@ -267,37 +267,75 @@ class HeadAwareDynamicCache(DynamicCache):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         基于重要性压缩（用于retrieval heads）
+        [CRITICAL FIX] 现在强制保留 Recent Window，避免丢失局部语法上下文
+        
+        策略：
+        1. Sink Tokens: 保留最前面的几个token (Attention Sink)
+        2. Recent Window: 强制保留最近的一部分token (保证上下文连贯性和语法结构)
+        3. Top-K Important: 在中间区域保留重要性高的token (捕捉长距离依赖)
         """
         bsz, seq_len, head_dim = key.shape
         if seq_len <= budget:
             return key, value
 
         # 1. 保留sink tokens
-        sink_size = min(self.sink_tokens, budget // 2)
+        sink_size = min(self.sink_tokens, budget // 4)
         sink_keys = key[:, :sink_size, :]
         sink_values = value[:, :sink_size, :]
 
-        # 2. 准备剩余部分的 keys 和 values
-        remaining_keys = key[:, sink_size:, :]
-        remaining_values = value[:, sink_size:, :]
+        # 2. [CRITICAL FIX] 强制保留 Recent Window
+        # 为最近的上下文预留预算，例如总预算的 25% 或者至少 32 个 token，最多 64 个
+        recent_window_size = max(32, int(budget * 0.25))
+        recent_window_size = min(recent_window_size, 64)  # 最多 64 个 token
+        # 确保不超出剩余预算
+        recent_window_size = min(recent_window_size, budget - sink_size)
+        
+        recent_keys = key[:, -recent_window_size:, :]
+        recent_values = value[:, -recent_window_size:, :]
 
-        # 3. 计算重要性分数
-        if importance_scores is not None:
-            scores = importance_scores[:, sink_size:]
+        # 3. 中间区域：基于重要性采样 (Top-K Important Tokens)
+        # 剩余的预算分配给中间区域的高分 Token
+        remaining_budget = budget - sink_size - recent_window_size
+
+        if remaining_budget > 0:
+            # 中间区域范围：从 sink_size 到 seq_len - recent_window_size
+            middle_keys = key[:, sink_size:-recent_window_size, :]
+            middle_values = value[:, sink_size:-recent_window_size, :]
+
+            # 计算中间区域的 importance scores
+            if importance_scores is not None:
+                # 对应的 score 切片
+                mid_scores = importance_scores[:, sink_size:-recent_window_size]
+            else:
+                # Fallback: L2 Norm
+                mid_scores = torch.norm(middle_keys, p=2, dim=-1)
+
+            # 选取 Top-K
+            # 确保 k 不超过中间区域实际长度和剩余预算
+            k = min(remaining_budget, mid_scores.size(1))
+
+            if k > 0:
+                _, top_indices = torch.topk(mid_scores, k, dim=1)
+                top_indices, _ = torch.sort(top_indices, dim=1)  # 保持原有顺序
+
+                selected_mid_keys = torch.gather(
+                    middle_keys, 1,
+                    top_indices.unsqueeze(-1).expand(-1, -1, head_dim)
+                )
+                selected_mid_values = torch.gather(
+                    middle_values, 1,
+                    top_indices.unsqueeze(-1).expand(-1, -1, head_dim)
+                )
+            else:
+                selected_mid_keys = torch.empty(bsz, 0, head_dim, device=key.device, dtype=key.dtype)
+                selected_mid_values = torch.empty(bsz, 0, head_dim, device=value.device, dtype=value.dtype)
         else:
-            scores = torch.norm(remaining_keys, p=2, dim=-1)
+            selected_mid_keys = torch.empty(bsz, 0, head_dim, device=key.device, dtype=key.dtype)
+            selected_mid_values = torch.empty(bsz, 0, head_dim, device=value.device, dtype=value.dtype)
 
-        # 选择top-k重要的tokens
-        remaining_budget = budget - sink_size
-        k = min(remaining_budget, scores.size(1))
-        _, top_indices = torch.topk(scores, k, dim=1)
-        top_indices, _ = torch.sort(top_indices, dim=1)
-
-        selected_keys = torch.gather(remaining_keys, 1, top_indices.unsqueeze(-1).expand(-1, -1, head_dim))
-        selected_values = torch.gather(remaining_values, 1, top_indices.unsqueeze(-1).expand(-1, -1, head_dim))
-
-        compressed_key = torch.cat([sink_keys, selected_keys], dim=1)
-        compressed_value = torch.cat([sink_values, selected_values], dim=1)
+        # 4. 拼接三部分：Sink + Top-K Important + Recent Window
+        compressed_key = torch.cat([sink_keys, selected_mid_keys, recent_keys], dim=1)
+        compressed_value = torch.cat([sink_values, selected_mid_values, recent_values], dim=1)
 
         return compressed_key, compressed_value
 

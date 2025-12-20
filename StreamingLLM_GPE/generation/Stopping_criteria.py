@@ -4,6 +4,27 @@
 # Modified 2025 by Junlong Tong.
 import torch
 from transformers.generation.stopping_criteria import StoppingCriteria
+import sys
+import os
+
+# 添加 utils 路径
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_current_dir, '../..'))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+try:
+    from StreamingLLM_GPE.utils.tokenizer_utils import get_all_eos_token_ids
+except ImportError:
+    # 如果导入失败，使用简单的 fallback
+    def get_all_eos_token_ids(tokenizer):
+        eos_ids = set()
+        if tokenizer.eos_token_id is not None:
+            if isinstance(tokenizer.eos_token_id, list):
+                eos_ids.update(tokenizer.eos_token_id)
+            else:
+                eos_ids.add(tokenizer.eos_token_id)
+        return eos_ids
 
 
 class StopTokenCriteria(StoppingCriteria):
@@ -15,10 +36,8 @@ class StopTokenCriteria(StoppingCriteria):
     ):
         self.tokenizer = tokenizer
         self.max_new_tokens = max_new_tokens
-        # [核心修复] 自动获取 EOS ID，不再依赖默认字符串
-        self.eos_token_id = tokenizer.eos_token_id
-        # 针对 Qwen 的特殊处理：如果 tokenizer 没设好，手动添加 Qwen 的结束符 ID
-        self.qwen_eos_id = 151645
+        # [通用修复] 自动获取所有可能的 EOS token IDs
+        self.eos_token_ids = get_all_eos_token_ids(tokenizer)
         # 字符串兜底
         if end_Instruct is None:
             self.end_Instruct = tokenizer.eos_token if tokenizer.eos_token else ""
@@ -28,16 +47,10 @@ class StopTokenCriteria(StoppingCriteria):
         # 1. 最快、最准的判断：检查最后一个 Token 的 ID
         last_token_id = target_ids[0, -1].item()
 
-        # 检查标准 EOS
-        if self.eos_token_id is not None:
-            if isinstance(self.eos_token_id, list):
-                if last_token_id in self.eos_token_id:
-                    return torch.tensor(True), torch.tensor(False)
-            elif last_token_id == self.eos_token_id:
-                return torch.tensor(True), torch.tensor(False)
-        # 检查 Qwen 特有 EOS (防止 config 加载错误)
-        if last_token_id == self.qwen_eos_id:
+        # [通用修复] 检查所有可能的 EOS token IDs
+        if last_token_id in self.eos_token_ids:
             return torch.tensor(True), torch.tensor(False)
+        
         # 2. 检查长度限制
         if token_count >= self.max_new_tokens:
             is_done = True

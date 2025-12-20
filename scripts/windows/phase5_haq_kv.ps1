@@ -1,5 +1,6 @@
-# Phase 5: HAQ-KV实验（可选）
+# Phase 5: HAQ-KV实验（主要目标）
 # 测试Head-Aware Quantized KV Cache方法
+# 这是论文的主要贡献：基于Head功能特性的异构量化KV Cache
 #
 # 使用方法：
 #   .\scripts\windows\phase5_haq_kv.ps1
@@ -35,7 +36,8 @@ Write-Host "Retrieval Bits: $RetrievalBits"
 Write-Host "Samples: $Samples"
 Write-Host "Output: $BASE_OUTPUT_DIR\haq_kv_*"
 Write-Host ""
-Write-Host "Note: This tests the HAQ-KV method with quantization."
+Write-Host "Note: This is the MAIN CONTRIBUTION of the paper."
+Write-Host "      HAQ-KV uses heterogeneous quantization based on head functions."
 Write-Host "      Retrieval Heads use INT$RetrievalBits, others use FP16."
 Write-Host ""
 

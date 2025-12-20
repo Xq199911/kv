@@ -12,7 +12,7 @@ scripts/windows/
 ├── phase2_budget_analysis.ps1   # Phase 2: 预算影响分析（必须）
 ├── phase3_ablation.ps1          # Phase 3: 消融实验（必须）
 ├── phase4_analysis.ps1           # Phase 4: 结果分析和可视化（推荐）
-├── phase5_haq_kv.ps1            # Phase 5: HAQ-KV实验（可选）
+├── phase5_haq_kv.ps1            # Phase 5: HAQ-KV实验（主要目标）
 │
 ├── download_models.ps1           # 模型下载脚本
 ├── run_head_aware_experiments.ps1  # Head-Aware快速测试脚本
@@ -46,7 +46,7 @@ scripts/windows/
 # Phase 4: 结果分析（推荐）
 .\scripts\windows\phase4_analysis.ps1
 
-# Phase 5: HAQ-KV实验（可选）
+# Phase 5: HAQ-KV实验（主要目标）
 .\scripts\windows\phase5_haq_kv.ps1
 ```
 
@@ -142,12 +142,13 @@ notepad .\scripts\windows\config.ps1
   - 可视化图表（PNG/PDF）
 - **输出位置**: `output_logs/a_level_paper/*_summary.*` 和 `figures/`
 
-### Phase 5: HAQ-KV实验（可选）
+### Phase 5: HAQ-KV实验（主要目标）
 - **方法**: HAQ-KV（Head-Aware Quantized KV Cache）
-- **功能**: 测试异构量化方法
+- **功能**: 测试异构量化方法（论文的主要贡献）
+- **重要性**: ⭐⭐⭐ 这是论文的核心贡献，必须运行
 - **时间**: ~2-4小时
 - **输出**: `output_logs/a_level_paper/haq_kv_{bits}bit/`
-- **用途**: 验证量化方法的有效性
+- **用途**: 验证基于Head功能特性的异构量化方法的有效性
 
 ## 📝 实验流程示例
 

@@ -38,6 +38,28 @@ except ImportError:
     QwenHAQKVCache = None
 from StreamingLLM_GPE.utils.head_analyzer import HeadAnalyzer
 from StreamingLLM_GPE.utils.budget_monitor import BudgetMonitor
+try:
+    from StreamingLLM_GPE.utils.tokenizer_utils import normalize_tokenizer_eos_token, get_all_eos_token_ids
+except ImportError:
+    # Fallback: 如果导入失败，定义简单的 fallback 函数
+    def normalize_tokenizer_eos_token(tokenizer, model_name=None):
+        eos_ids = set()
+        if tokenizer.eos_token_id is not None:
+            if isinstance(tokenizer.eos_token_id, list):
+                eos_ids.update(tokenizer.eos_token_id)
+            else:
+                eos_ids.add(tokenizer.eos_token_id)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        return eos_ids
+    def get_all_eos_token_ids(tokenizer):
+        eos_ids = set()
+        if tokenizer.eos_token_id is not None:
+            if isinstance(tokenizer.eos_token_id, list):
+                eos_ids.update(tokenizer.eos_token_id)
+            else:
+                eos_ids.add(tokenizer.eos_token_id)
+        return eos_ids
 import importlib.util
 
 _utils_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'utils.py')
@@ -294,20 +316,11 @@ def main():
     config._attn_implementation = "eager"
     tokenizer = AutoTokenizer.from_pretrained(args.LLM_path, padding_side='right', config=config)
 
-    # ================= [CRITICAL FIX] 强制修正 EOS Token =================
-    if "Qwen" in args.LLM_path:
-        # 很多 Qwen 模型默认 eos_token_id 是 151643 (<|endoftext|>)
-        # 但 Instruct 模型实际输出的是 151645 (<|im_end|>)
-        # 这导致代码永远等不到“结束信号”
-        print(f"Checking Qwen EOS token... Current: {tokenizer.eos_token_id}")
-        if tokenizer.eos_token_id != 151645:
-            print(f"Overriding EOS token to 151645 (<|im_end|>) for Qwen.")
-            tokenizer.eos_token_id = 151645
-            tokenizer.pad_token_id = 151645
-        # =====================================================================
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # ================= [通用修复] 标准化 EOS Token 配置 =================
+    # 使用通用工具函数自动处理所有模型的 EOS token 配置
+    all_eos_ids = normalize_tokenizer_eos_token(tokenizer, model_name=args.LLM_backbone)
+    print(f"[{args.LLM_backbone}] EOS token ID: {tokenizer.eos_token_id}")
+    print(f"[{args.LLM_backbone}] All EOS token IDs: {get_all_eos_token_ids(tokenizer)}")
     # =====================================================================
 
     # 量化配置
@@ -475,6 +488,10 @@ def main():
     # ================= [CRITICAL FIX END] =================
 
     stream_model.eval()
+    # 获取总样本数，用于判断最后两个样本
+    total_samples = len(dataloader)
+    print(f"\n[INFO] Total samples to process: {total_samples}")
+    
     # 循环评估
     for step, batch in enumerate(tqdm(dataloader, desc=f"Evaluating {args.LLM_backbone}")):
         source_txt = batch.get("source_txt", None)
@@ -584,16 +601,97 @@ def main():
         target_txt_lt.extend(target_txt)
         output_text_lt.extend([output_text])
 
-        # 添加调试信息
-        if step == 0 or step < 3:
-            logging.info(f"[DEBUG] Sample {step} output:")
-            logging.info(f"  Output length: {len(generated_tokens)} tokens")
-            logging.info(f"  Output text (first 500 chars): {output_text[:500]}...")
-            print(f"\n[DEBUG] Sample {step} output:")
-            print(f"  Output length: {len(generated_tokens)} tokens")
-            print(f"  Output text (first 300 chars): {output_text[:300]}...")
-            if target_txt:
-                print(f"  Target text (first 300 chars): {target_txt[0][:300]}")
+        # ================= [详细打印] 打印第一个样本和最后两个样本的完整目标文本和生成文本 =================
+        # 安全获取目标文本
+        target_text = ""
+        if target_txt and len(target_txt) > 0:
+            if isinstance(target_txt[0], list):
+                target_text = target_txt[0][0] if len(target_txt[0]) > 0 else ""
+            else:
+                target_text = target_txt[0]
+        
+        # 判断是否需要打印完整内容：第一个样本（step == 0）或最后两个样本
+        should_print_full = False
+        if total_samples >= 3:
+            # 如果有3个或更多样本：打印第一个和最后两个
+            should_print_full = (step == 0) or (step == total_samples - 2) or (step == total_samples - 1)
+        elif total_samples == 2:
+            # 如果只有2个样本：打印第一个和最后一个
+            should_print_full = (step == 0) or (step == total_samples - 1)
+        else:
+            # 如果只有1个样本：只打印第一个
+            should_print_full = (step == 0)
+        
+        if should_print_full:
+            print(f"\n{'='*80}")
+            print(f"Sample {step} - Full Text Comparison")
+            if step == 0:
+                print("(First Sample)")
+            elif step == total_samples - 1:
+                print("(Last Sample)")
+            elif step == total_samples - 2:
+                print("(Second Last Sample)")
+            print(f"{'='*80}")
+            
+            print(f"\n[Target Text] (Length: {len(target_text)} chars):")
+            print("-" * 80)
+            if target_text:
+                print(target_text)
+            else:
+                print("N/A")
+            print("-" * 80)
+            
+            print(f"\n[Generated Text] (Length: {len(output_text)} chars, Tokens: {len(generated_tokens)}):")
+            print("-" * 80)
+            print(output_text)
+            print("-" * 80)
+            
+            # 检查是否有明显的重复或垃圾内容
+            if target_text and len(output_text) > len(target_text) * 2:
+                ratio = len(output_text) / len(target_text)
+                print(f"\n[WARNING] Generated text is {ratio:.2f}x longer than target!")
+                print("This might indicate a stopping condition issue.")
+            
+            # 检查是否包含明显的重复模式
+            if len(output_text) > 500:
+                last_200 = output_text[-200:]
+                second_last_200 = output_text[-400:-200] if len(output_text) > 400 else ""
+                if second_last_200 and last_200 == second_last_200:
+                    print(f"\n[WARNING] Detected repetitive pattern in generated text!")
+            
+            # 检查是否以EOS token结尾
+            if generated_tokens is not None and len(generated_tokens) > 0:
+                try:
+                    # 安全获取最后一个token ID
+                    if isinstance(generated_tokens, torch.Tensor):
+                        last_token_id = int(generated_tokens[-1].item())
+                    elif isinstance(generated_tokens, list):
+                        last_token_id = int(generated_tokens[-1])
+                    else:
+                        last_token_id = None
+                    
+                    if last_token_id is not None:
+                        all_eos_ids = get_all_eos_token_ids(tokenizer) if tokenizer else set()
+                        if last_token_id in all_eos_ids:
+                            print(f"\n[INFO] Generation ended with EOS token (ID: {last_token_id})")
+                        else:
+                            print(f"\n[WARNING] Generation did NOT end with EOS token! Last token ID: {last_token_id}")
+                            print(f"Expected EOS token IDs: {all_eos_ids}")
+                except Exception as e:
+                    print(f"\n[INFO] Could not check EOS token: {e}")
+            
+            print(f"{'='*80}\n")
+        else:
+            # 其他样本只打印简要信息
+            print(f"Sample {step}: Generated {len(generated_tokens)} tokens, Output length: {len(output_text)} chars")
+        
+        # 同时记录到日志（只记录前500字符以节省空间）
+        logging.info(f"[DEBUG] Sample {step} output:")
+        logging.info(f"  Output length: {len(generated_tokens)} tokens")
+        logging.info(f"  Output text (first 500 chars): {output_text[:500]}...")
+        if target_txt and len(target_txt) > 0:
+            logging.info(f"  Target text (first 500 chars): {target_txt[0][:500]}...")
+        # ========================================================================
 
         seq_len = len(generated_tokens)
         stats['total_tokens'] += seq_len
