@@ -66,6 +66,7 @@ foreach ($seq_len in $SequenceLengths) {
         --LLM_backbone $MODEL_NAME `
         --LLM_path $MODEL_PATH `
         --inference_mode streaming `
+        --quantization none `
         --wait_k $WAIT_K `
         --output_dir "$seq_output_dir\baseline" `
         --params $PARAMS `
@@ -81,6 +82,7 @@ foreach ($seq_len in $SequenceLengths) {
             --LLM_backbone $MODEL_NAME `
             --LLM_path $MODEL_PATH `
             --inference_mode streaming `
+            --quantization none `
             --wait_k $WAIT_K `
             --use_h2o `
             --h2o_budget $TOTAL_BUDGET `
@@ -102,6 +104,7 @@ foreach ($seq_len in $SequenceLengths) {
             --LLM_backbone $MODEL_NAME `
             --LLM_path $MODEL_PATH `
             --inference_mode streaming `
+            --quantization none `
             --wait_k $WAIT_K `
             --use_streamingllm `
             --streamingllm_window $STREAMINGLLM_WINDOW `
@@ -122,6 +125,7 @@ foreach ($seq_len in $SequenceLengths) {
         --LLM_backbone $MODEL_NAME `
         --LLM_path $MODEL_PATH `
         --inference_mode streaming `
+        --quantization none `
         --wait_k $WAIT_K `
         --use_head_aware `
         --analyze_heads `

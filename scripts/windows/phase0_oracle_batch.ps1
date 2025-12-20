@@ -43,6 +43,7 @@ python StreamingLLM_GPE/evaluate/multi_model_eval.py `
     --LLM_backbone $MODEL_NAME `
     --LLM_path $MODEL_PATH `
     --inference_mode batch `
+    --quantization none `
     --output_dir $output_dir `
     --params $PARAMS `
     --min_source_length $min_length_batch `
