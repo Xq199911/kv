@@ -1,4 +1,4 @@
-# A级论文完整实验脚本 - Windows版本（已重构）
+# 论文完整实验脚本 - Windows版本（已重构）
 # 
 # ⚠️ 注意：此脚本已重构为模块化脚本
 # 推荐使用：.\scripts\windows\run_all_experiments.ps1

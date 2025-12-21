@@ -1,7 +1,7 @@
 """
 多模型评估脚本
 支持: Qwen, Llama, Gemma, Phi3
-用于A级会议/期刊的多模型验证
+用于会议/期刊的多模型验证
 """
 import os
 import sys
@@ -286,6 +286,9 @@ def main():
     setup_seed(0)
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
+    # 保存每个样本的输出目录（按模式分组：batch / streaming）
+    samples_output_root = os.path.join(args.output_dir, "samples")
+    os.makedirs(samples_output_root, exist_ok=True)
     # 设置日志
     log_file = f"{args.output_dir}/multi_model_eval.log"
     logging.basicConfig(
@@ -600,6 +603,20 @@ def main():
 
         target_txt_lt.extend(target_txt)
         output_text_lt.extend([output_text])
+        # 保存每个样本的目标与生成文本到文件，按模式存放，便于逐样本对比
+        try:
+            mode_dir = os.path.join(args.output_dir, "samples", inference_mode)
+            os.makedirs(mode_dir, exist_ok=True)
+            target_filename = os.path.join(mode_dir, f"sample_{step:04d}_target.txt")
+            gen_filename = os.path.join(mode_dir, f"sample_{step:04d}_generated.txt")
+            with open(target_filename, "w", encoding="utf-8") as f_t:
+                # 使用安全的 target_text（可能为 list 或空）
+                f_t.write(target_text if target_text is not None else "")
+            with open(gen_filename, "w", encoding="utf-8") as f_g:
+                f_g.write(output_text if output_text is not None else "")
+            logging.info(f"Saved sample {step} files to {mode_dir}")
+        except Exception as e:
+            logging.warning(f"Failed to save sample files for step {step}: {e}")
 
         # ================= [详细打印] 打印第一个样本和最后两个样本的完整目标文本和生成文本 =================
         # 安全获取目标文本
@@ -782,7 +799,8 @@ def main():
                     f"  Output: {output_text_lt[i][:200] if len(output_text_lt[i]) > 200 else output_text_lt[i]}")
 
             try:
-                bleu = sacrebleu.corpus_bleu(output_text_lt, [target_txt_lt])
+                # 明确指定 sacrebleu 的 tokenizer，以保证 batch 与 streaming 使用一致的评估设定
+                bleu = sacrebleu.corpus_bleu(output_text_lt, [target_txt_lt], tokenize='13a')
                 bleu_score = bleu.score
                 logging.info(f"BLEU score: {bleu_score:.2f}")
             except Exception as e:

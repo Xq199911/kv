@@ -4,7 +4,6 @@
 import os
 import sys
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
 import math

@@ -1,7 +1,7 @@
-# A级论文完整实验指南（最终版）
+# 论文完整实验指南（最终版）
 
 ## 🎯 目标
-发表A级会议/期刊论文（ACL, EMNLP, NeurIPS, ICML等）
+发表会议/期刊论文（ACL, EMNLP, NeurIPS, ICML等）
 
 ---
 
@@ -117,11 +117,11 @@ python StreamingLLM_GPE/evaluate/multi_model_eval.py \
 - 生成 `./output_logs/streamingllm_test/results.json`
 - 日志文件显示推理过程无错误
 
-**为什么最重要**: A级论文必须与SOTA方法对比，证明方法的优势
+**为什么最重要**: 论文必须与SOTA方法对比，证明方法的优势
 
 ---
 
-### Step 3: 运行A级论文实验（必须）⭐⭐⭐⭐⭐
+### Step 3: 运行论文实验（必须）⭐⭐⭐⭐⭐
 
 **时间**: 2-3天（取决于硬件配置）
 
@@ -271,7 +271,7 @@ python visualize_results.py \
 
 ---
 
-## 📊 A级论文成功标准
+## 📊 论文成功标准
 
 ### 必须达到
 
@@ -312,12 +312,12 @@ StreamingLLM/
 │   └── Gemma2-9B-Instruct/       # Gemma模型
 ├── data_raw/                      # 原始数据
 ├── output_logs/                   # 实验结果输出目录
-│   ├── a_level_paper/            # A级论文实验结果
+│   ├── a_level_paper/            # 论文实验结果
 │   └── multi_model/              # 多模型实验结果
 ├── requirements.txt               # Python依赖
 ├── setup_models_china.sh          # 模型下载脚本（国内源）⭐
 ├── download_models_china.py       # 模型下载Python脚本（国内源）⭐
-├── run_a_level_experiments.sh     # A级论文实验脚本 ⭐
+├── run_a_level_experiments.sh     # 论文实验脚本 ⭐
 ├── run_multi_model_experiments.sh # 多模型实验脚本
 ├── analyze_experiment_results.py  # 结果分析脚本
 ├── visualize_results.py          # 可视化脚本
@@ -375,7 +375,7 @@ python StreamingLLM_GPE/evaluate/multi_model_eval.py \
 ### 第三步：运行完整实验
 
 ```bash
-# 运行A级论文完整实验（包含4个Phase）
+# 运行论文完整实验（包含4个Phase）
 bash run_a_level_experiments.sh
 ```
 
@@ -402,7 +402,7 @@ python visualize_results.py \
 
 1. **先下载模型**：所有实验都需要模型
 2. **必须先实现Baseline**：没有baseline对比，无法证明方法优势
-3. **消融实验是必须的**：A级论文必须证明各组件贡献
+3. **消融实验是必须的**：论文必须证明各组件贡献
 4. **多模型验证是必须的**：至少3个模型
 
 ---
@@ -411,7 +411,7 @@ python visualize_results.py \
 
 - **Day 1**: 下载模型（2-4小时）
 - **Day 1-2**: 实现Baseline（1-2天）
-- **Day 3-5**: 运行A级论文实验（2-3天）
+- **Day 3-5**: 运行论文实验（2-3天）
 - **Day 6-10**: 多模型验证（3-5天）
 - **Day 11-12**: 结果分析（1-2天）
 - **Week 3-6**: 论文撰写
@@ -437,7 +437,7 @@ python visualize_results.py \
 - [ ] H2O baseline 测试通过
 - [ ] StreamingLLM baseline 测试通过
 
-### A级论文实验
+### 论文实验
 - [ ] Phase 1: 长序列内存效率对比实验完成
   - [ ] 2000 tokens测试
   - [ ] 5000 tokens测试

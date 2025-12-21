@@ -8,7 +8,7 @@ $PARAMS = ".\StreamingLLM_GPE\configs\params_qwen_inference.json"
 
 # ================= 实验基础配置 =================
 $WAIT_K = 15
-$MAX_NEW_TOKENS = 4096
+$MAX_NEW_TOKENS = 2048
 $TOTAL_BUDGET = 2048
 $MAX_MEMORY_GB = 20.0
 

@@ -474,6 +474,20 @@ class unified_PreTrainedModel(PreTrainedModel):
         this_peer_finished = False
         unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
 
+        # [PROTECTION] Early stopping mechanisms to prevent degeneration
+        # Track recent tokens for repetition detection
+        recent_tokens_window = 50  # Check last 50 tokens for repetition
+        recent_tokens = []
+        # Track generation quality (logits entropy as proxy)
+        min_logits_entropy = float('inf')
+        repetition_detected = False
+        # Maximum generation length relative to source (prevent excessive generation)
+        # If generation exceeds 3x source length, likely degeneration
+        max_generation_ratio = 3.0
+        # Allow a larger extension beyond max_new_tokens to let model emit EOS naturally
+        # For very long sources, 10% may be insufficient; allow at least 512 tokens or 20% of max_new_tokens
+        extension_allowance = max(512, int(max_new_tokens * 0.2))
+
         # Initial cache position setup
         model_kwargs = self._get_initial_cache_position_for_streaming(input_length, model_kwargs)
 
@@ -548,6 +562,46 @@ class unified_PreTrainedModel(PreTrainedModel):
                     unfinished_sequences.fill_(0)
                     break
                     # ====================================================================
+                
+                # [PROTECTION] Early stopping: Detect repetition and quality degradation
+                # Add current token to recent tokens window
+                recent_tokens.append(current_token_id)
+                if len(recent_tokens) > recent_tokens_window:
+                    recent_tokens.pop(0)
+                
+                # Check for repetition pattern (if we have enough tokens)
+                if len(recent_tokens) >= 20 and generated_tokens_count >= 100:
+                    # Check if last 20 tokens repeat in the window
+                    last_20 = recent_tokens[-20:]
+                    if len(recent_tokens) >= 40:
+                        # Check if last 20 tokens appear earlier in the window
+                        for i in range(len(recent_tokens) - 40):
+                            if recent_tokens[i:i+20] == last_20:
+                                repetition_detected = True
+                                logger.warning(f"[PROTECTION] Repetition detected at token {generated_tokens_count}, stopping early")
+                                this_peer_finished = True
+                                unfinished_sequences.fill_(0)
+                                break
+                
+                # Check logits entropy as quality indicator
+                if return_dict_in_generate and output_logits and len(raw_logits) > 0:
+                    try:
+                        # Calculate entropy of the last logits
+                        last_logits = raw_logits[-1]
+                        probs = nn.functional.softmax(last_logits, dim=-1)
+                        entropy = -torch.sum(probs * torch.log(probs + 1e-10))
+                        min_logits_entropy = min(min_logits_entropy, entropy.item())
+                        
+                        # If entropy drops too low (model is too confident/confused), might indicate degeneration
+                        # This is a heuristic - very low entropy might mean model is stuck
+                        if generated_tokens_count >= 200 and entropy.item() < 0.1:
+                            logger.warning(f"[PROTECTION] Very low logits entropy ({entropy.item():.4f}) detected, possible degeneration")
+                            # Don't stop immediately, but log for monitoring
+                    except Exception:
+                        pass  # Ignore errors in quality check
+                
+                if repetition_detected:
+                    break
 
                 if has_eos_stopping_criteria:
                     next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
@@ -573,8 +627,24 @@ class unified_PreTrainedModel(PreTrainedModel):
                     
                 unfinished_sequences = unfinished_sequences & ~stopping_criteria(target_ids[0:, 2:], scores)
                 generated_tokens_count += 1
+                
+                # [PROTECTION] Check if generation length exceeds reasonable ratio to source
+                # This helps prevent degeneration in long sequences
+                if full_source_len > 0 and generated_tokens_count > 0:
+                    generation_ratio = generated_tokens_count / full_source_len
+                    if generation_ratio > max_generation_ratio:
+                        logger.warning(f"[PROTECTION] Generation length ({generated_tokens_count}) exceeds {max_generation_ratio}x source length ({full_source_len}), stopping early to prevent degeneration")
+                        this_peer_finished = True
+                        unfinished_sequences.fill_(0)
+                        break
+                
+                # When reaching max_new_tokens, allow a short extension window to let model produce EOS
                 if generated_tokens_count >= max_new_tokens:
-                    this_peer_finished = True
+                    if generated_tokens_count < max_new_tokens + extension_allowance and not repetition_detected:
+                        logger.info(f"[EXTEND] Reached max_new_tokens ({max_new_tokens}); allowing extension up to {extension_allowance} more tokens to wait for EOS.")
+                        # do not set this_peer_finished yet; allow generation to continue
+                    else:
+                        this_peer_finished = True
                 cur_len += 1
                 wait_lagging.append(source_words)
                 target_words += 1
@@ -609,6 +679,38 @@ class unified_PreTrainedModel(PreTrainedModel):
                 else:
                     device = target_tokens[0].device if len(target_tokens) > 0 else input_ids.device
                     target_ids = torch.tensor([], dtype=torch.long, device=device).unsqueeze(0)
+        # ================= [POST-PROCESS] Ensure EOS-aware truncation and diagnostics =================
+        try:
+            all_eos_token_ids = get_all_eos_token_ids(tokenizer) if tokenizer is not None else set()
+        except Exception:
+            all_eos_token_ids = set()
+
+        # Normalize target_ids to 2D tensor (batch, seq)
+        if 'target_ids' in locals() and target_ids is not None:
+            try:
+                if isinstance(target_ids, torch.Tensor):
+                    seq_tensor = target_ids
+                else:
+                    seq_tensor = torch.tensor(target_ids, dtype=torch.long)
+                # ensure batch dim
+                if seq_tensor.dim() == 1:
+                    seq_tensor = seq_tensor.unsqueeze(0)
+                seq_list = seq_tensor[0].tolist() if seq_tensor.size(0) > 0 else []
+                eos_pos = None
+                for idx, tok in enumerate(seq_list):
+                    if tok in all_eos_token_ids:
+                        eos_pos = idx
+                        break
+                if eos_pos is not None:
+                    truncated = seq_list[: eos_pos + 1]
+                    target_ids = torch.tensor(truncated, dtype=torch.long, device=seq_tensor.device).unsqueeze(0)
+                    logger.info(f"[POST-PROCESS] Truncated generated sequence at EOS position {eos_pos}.")
+                else:
+                    last_tok = seq_list[-1] if len(seq_list) > 0 else None
+                    logger.warning(f"[POST-PROCESS] No EOS token found in generated sequence. Last token id: {last_tok}")
+            except Exception as e:
+                logger.exception(f"[POST-PROCESS] Failed to post-process generated tokens: {e}")
+
         if return_dict_in_generate:
             return GenerateDecoderOnlyOutput(
                 sequences=target_ids,
